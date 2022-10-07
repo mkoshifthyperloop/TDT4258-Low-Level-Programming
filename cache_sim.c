@@ -83,7 +83,7 @@ void main(int argc, char** argv) {
 
     /* Set cache size */
     cache_size = atoi(argv[1]);
-
+   
     /* Set Cache Mapping */
     if (strcmp(argv[2], "dm") == 0) {
       cache_mapping = dm;
@@ -105,6 +105,10 @@ void main(int argc, char** argv) {
     }
   }
 
+  cache_block_t cache;
+  memset(&cache, 0, sizeof(cache_block_t)*cache_size/64);
+
+
   /* Open the file mem_trace.txt to read memory accesses */
   FILE* ptr_file;
   ptr_file = fopen("mem_trace.txt", "r");
@@ -125,26 +129,30 @@ void main(int argc, char** argv) {
     switch (cache_mapping)
     {
     case dm:
-        switch (cache_org)
-        {
-        case uc:
-            /* code */
-            break;
-        case sc:
-            break;
-        }
+      switch (cache_org)
+      {
+      case uc:
+        /* code */
         break;
 
-    case fa:
-        switch (cache_org)
-        {
-        case uc:
-            /* code */
-            break;
-        case sc:
-            break;
-        }
+      case sc:
+
         break;
+      }
+      break;
+
+    case fa:
+      switch (cache_org)
+      {
+      case uc:
+        /* code */
+        break;
+
+      case sc:
+        
+        break;
+      }
+      break;
     }
     cache_statistics.accesses++;
   }
