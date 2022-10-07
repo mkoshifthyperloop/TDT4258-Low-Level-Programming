@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 
 typedef enum { dm, fa } cache_map_t;
 typedef enum { uc, sc } cache_org_t;
@@ -61,6 +62,37 @@ mem_access_t read_transaction(FILE* ptr_file) {
   return access;
 }
 
+bool cache_access_dm(cache_block_t *cache, mem_access_t access, uint32_t address_mask, uint32_t tag_mask){
+  uint32_t index = (access.address & address_mask) >> 5;
+  uint32_t tag = (access.address & tag_mask) >> 5;
+  
+  if (cache[index].valid && cache[index].tag == tag){
+    return true;
+  }
+  else{
+    cache[index].tag = tag;
+    cache[index].valid = true;
+    return false;
+  }
+  
+
+}
+
+bool cache_access_fa(cache_block_t *cache, mem_access_t access, uint32_t tag_mask, uint32_t blocks, uint32_t next_index){
+  uint32_t tag = (access.address & tag_mask);
+
+  for (int i = 0; i < blocks; i++){
+    if (cache[i].valid && cache[i].tag == tag){
+      return true;
+    }
+  }
+
+  cache[next_index].valid = true;
+  cache[next_index].tag = tag;
+  return false;
+}
+
+
 void main(int argc, char** argv) {
   // Reset statistics:
   memset(&cache_statistics, 0, sizeof(cache_stat_t));
@@ -105,9 +137,15 @@ void main(int argc, char** argv) {
     }
   }
 
-  cache_block_t cache;
-  memset(&cache, 0, sizeof(cache_block_t)*cache_size/64);
+  uint32_t blocks = cache_size/block_size;
 
+  cache_block_t full_cache[blocks];
+  memset(&full_cache, 0, sizeof(full_cache));
+
+  cache_block_t data_cache[(cache_size/2)/block_size];
+  memset(&data_cache, 0, sizeof(data_cache));
+  cache_block_t instruction_cache[(cache_size/2)/block_size];
+  memset(&data_cache, 0, sizeof(data_cache));
 
   /* Open the file mem_trace.txt to read memory accesses */
   FILE* ptr_file;
@@ -116,6 +154,14 @@ void main(int argc, char** argv) {
     printf("Unable to open the trace file\n");
     exit(1);
   }
+
+  uint32_t dm_adress_mask = ((blocks) - 1) << 5;
+  uint32_t dm_tag_mask = 0xffffffff - dm_adress_mask - 63;
+
+  uint32_t fa_tag_mask = 0xffffffff - 63;
+  uint32_t fa_next_index_uc = 0;
+  uint32_t fa_next_index_data = 0;
+  uint32_t fa_next_index_instruction = 0;
 
   /* Loop until whole trace file has been read */
   mem_access_t access;
@@ -132,11 +178,26 @@ void main(int argc, char** argv) {
       switch (cache_org)
       {
       case uc:
-        /* code */
+        if(cache_access_dm(full_cache, access, dm_adress_mask, dm_tag_mask)){
+          cache_statistics.hits++;
+        }
         break;
 
       case sc:
+        switch (access.accesstype)
+        {
+        case instruction:
+          if(cache_access_dm(instruction_cache, access, dm_adress_mask, dm_tag_mask)){
+            cache_statistics.hits++;
+          }
+          break;
 
+        case data:
+          if(cache_access_dm(data_cache, access, dm_adress_mask, dm_tag_mask)){
+            cache_statistics.hits++;
+          }
+          break;
+        }
         break;
       }
       break;
@@ -145,11 +206,43 @@ void main(int argc, char** argv) {
       switch (cache_org)
       {
       case uc:
-        /* code */
+        if (cache_access_fa(full_cache, access, fa_tag_mask, blocks, fa_next_index_uc)){
+          cache_statistics.hits++;
+        }
+        else{
+          fa_next_index_uc++;
+          if (fa_next_index_uc == blocks){
+            fa_next_index_uc = 0;
+          }
+        }
         break;
 
       case sc:
-        
+        switch (access.accesstype)
+        {
+        case instruction:
+          if (cache_access_fa(instruction_cache, access, fa_tag_mask, blocks, fa_next_index_instruction)){
+            cache_statistics.hits++;
+          }
+          else{
+            fa_next_index_instruction++;
+            if (fa_next_index_instruction == blocks/2){
+              fa_next_index_instruction = 0;
+            }
+          }
+          break;
+
+        case data:
+          if (cache_access_fa(data_cache, access, fa_tag_mask, blocks, fa_next_index_data)){
+            cache_statistics.hits++;
+          }
+          else{
+            fa_next_index_data++;
+            if (fa_next_index_data == blocks/2){
+              fa_next_index_data = 0;
+            }
+          }
+        }
         break;
       }
       break;
